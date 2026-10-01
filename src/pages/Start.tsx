@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
 import { db } from '../db/db';
+import { sperren } from '../db/schutz';
 import { Page } from '../components/Layout';
 import { Icon } from '../components/Icon';
 import { Badge, Card, Empty, ListLink } from '../components/ui';
@@ -13,8 +14,11 @@ const kacheln: [string, string, string][] = [
   ['/kalender', 'calendar', 'Kalender'],
   ['/rezepte', 'rx', 'Rezepte'],
   ['/rechnungen', 'euro', 'Rechnungen'],
+  ['/statistik', 'chart', 'Statistik'],
   ['/stammdaten', 'briefcase', 'Stammdaten'],
   ['/einstellungen', 'settings', 'Einstellungen'],
+  ['/rezepte/neu', 'plus', 'Neues Rezept'],
+  ['/mehr', 'more', 'Mehr'],
 ];
 
 export function Start() {
@@ -46,7 +50,14 @@ export function Start() {
   const tageszeit = new Date().getHours() < 11 ? 'Guten Morgen' : new Date().getHours() < 18 ? 'Guten Tag' : 'Guten Abend';
 
   return (
-    <Page title="Mobi">
+    <Page
+      title="Mobi"
+      actions={
+        <button className="icon-btn" aria-label="Sperren" title="Sperren" onClick={sperren}>
+          <Icon name="lock" />
+        </button>
+      }
+    >
       <div style={{ margin: '2px 2px 14px' }}>
         <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>
           {tageszeit}, {e.name.split(' ')[0]}
@@ -55,6 +66,13 @@ export function Start() {
           {new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </div>
       </div>
+
+      <Link to="/suche" className="search" style={{ display: 'block', textDecoration: 'none' }} aria-label="Suche öffnen">
+        <Icon name="search" />
+        <span className="input" style={{ display: 'flex', alignItems: 'center', paddingLeft: 40, color: 'var(--muted)' }}>
+          Patient, Rezept oder Rechnung suchen …
+        </span>
+      </Link>
 
       <nav className="tiles" aria-label="Schnellzugriff">
         {kacheln.map(([to, icon, label]) => (

@@ -92,15 +92,33 @@ export function RezeptForm() {
   const nav = useNavigate();
   const toast = useToast();
   const vorhanden = useLiveQuery(async () => (id ? (await db.rezepte.get(id)) ?? null : null), [id]);
-  const patienten = useLiveQuery(() => db.patienten.orderBy('nachname').filter((p) => !p.archiviert).toArray(), []);
+  const patienten = useLiveQuery(() => db.patienten.filter((p) => !p.archiviert).toArray().then((ps) => ps.sort((a, b) => a.nachname.localeCompare(b.nachname, 'de') || a.vorname.localeCompare(b.vorname, 'de'))), []);
   const aerzte = useLiveQuery(() => db.aerzte.orderBy('name').toArray(), []);
   const kts = useLiveQuery(() => db.kostentraeger.orderBy('name').toArray(), []);
+  const folgeId = params.get('folge');
+  const vorgaenger = useLiveQuery(async () => (folgeId ? (await db.rezepte.get(folgeId)) ?? null : null), [folgeId]);
   const [d, setD] = useState<RezeptDaten | null>(null);
 
   if (id && vorhanden === undefined) return <Page title="Rezept" back>…</Page>;
+  if (folgeId && vorgaenger === undefined) return <Page title="Rezept" back>…</Page>;
 
   const vorPatient = params.get('patient') ?? '';
-  const start: RezeptDaten = vorhanden ?? {
+  const folge: RezeptDaten | null = vorgaenger
+    ? {
+        patientId: vorgaenger.patientId,
+        arztId: vorgaenger.arztId,
+        kostentraegerId: vorgaenger.kostentraegerId,
+        leistungsart: vorgaenger.leistungsart,
+        ausstellungsdatum: isoDate(),
+        eingangsdatum: isoDate(),
+        diagnose: vorgaenger.diagnose,
+        icd10: vorgaenger.icd10,
+        verordnung: vorgaenger.verordnung.startsWith('Folgeverordnung') ? vorgaenger.verordnung : `Folgeverordnung: ${vorgaenger.verordnung}`,
+        verordneteEinheiten: vorgaenger.verordneteEinheiten,
+        vorgaengerId: vorgaenger.id,
+      }
+    : null;
+  const start: RezeptDaten = vorhanden ?? folge ?? {
     patientId: vorPatient,
     arztId: '',
     kostentraegerId: patienten?.find((p) => p.id === vorPatient)?.versicherung.kostentraegerId ?? '',
@@ -134,8 +152,13 @@ export function RezeptForm() {
   };
 
   return (
-    <Page title={id ? 'Rezept bearbeiten' : 'Neues Rezept'} back>
+    <Page title={id ? 'Rezept bearbeiten' : vorgaenger ? 'Folgeverordnung' : 'Neues Rezept'} back>
       <form onSubmit={speichern}>
+        {vorgaenger && (
+          <div className="alert info" role="status">
+            Folgeverordnung zu {vorgaenger.nummer} vom {formatDate(vorgaenger.ausstellungsdatum)} – Daten wurden übernommen, bitte Ausstellungsdatum und Einheiten der neuen Verordnung prüfen.
+          </div>
+        )}
         <Card title="Verordnung">
           <Field label="Patient *">
             <select required value={data.patientId} onChange={(e) => waehlePatient(e.target.value)} disabled={!!id}>

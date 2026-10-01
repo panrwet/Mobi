@@ -1,7 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { db, newId } from '../db/db';
+import { db, loeschen as loescheDatensatz, newId } from '../db/db';
+import { Dokumente } from '../components/Dokumente';
 import type { Patient, Sehstatus } from '../db/types';
 import { Page } from '../components/Layout';
 import { Icon } from '../components/Icon';
@@ -13,7 +14,7 @@ import { TERMIN_STATUS } from '../lib/status';
 export function PatientenListe() {
   const [q, setQ] = useState('');
   const [archiv, setArchiv] = useState(false);
-  const patienten = useLiveQuery(() => db.patienten.orderBy('nachname').toArray(), []);
+  const patienten = useLiveQuery(() => db.patienten.toArray().then((ps) => ps.sort((a, b) => a.nachname.localeCompare(b.nachname, 'de') || a.vorname.localeCompare(b.vorname, 'de'))), []);
   const infos = useRezeptInfos();
   const kts = useLiveQuery(() => db.kostentraeger.toArray(), []);
   const ktName = (id: string) => kts?.find((k) => k.id === id)?.name ?? '';
@@ -138,6 +139,8 @@ export function PatientDetail() {
         </Card>
       )}
 
+      <Dokumente patientId={p.id} />
+
       <Card title="Stammdaten">
         <dl className="dl">
           <dt>Name</dt>
@@ -251,7 +254,7 @@ export function PatientForm() {
       return;
     }
     if (!confirm('Patient endgültig löschen?')) return;
-    await db.patienten.delete(data.id);
+    await loescheDatensatz('patienten', data.id);
     nav('/patienten', { replace: true });
   };
 

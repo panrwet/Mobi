@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { db, newId } from '../db/db';
+import { db, loeschen, newId } from '../db/db';
 import { saveEinstellungen } from '../db/actions';
 import type { Adresse, Arzt, Einstellungen, Kostentraeger, KostentraegerTyp, Leistung, Leistungsart, PositionTyp } from '../db/types';
 import { Page } from '../components/Layout';
@@ -224,6 +224,14 @@ function LeistungForm({ l: start, onSave, onDelete }: { l: Leistung; onSave: (l:
         <Field label="Einheit">
           <input value={l.einheit} onChange={(e) => set({ einheit: e.target.value })} />
         </Field>
+        {l.typ === 'pauschal' && (
+          <Field label="Abrechnen mit">
+            <select value={l.zeitpunkt ?? 'beginn'} onChange={(e) => set({ zeitpunkt: e.target.value as 'beginn' | 'ende' })}>
+              <option value="beginn">erster Rechnung (z. B. Erstgespräch)</option>
+              <option value="ende">Schlussrechnung (z. B. Abschlussbericht)</option>
+            </select>
+          </Field>
+        )}
         <Field label="Preis (€)">
           <input type="number" step="0.01" min={0} value={l.preis} onChange={(e) => set({ preis: Number(e.target.value) })} />
         </Field>
@@ -282,7 +290,7 @@ function KostentraegerListe() {
               const n = await db.patienten.filter((p) => p.versicherung.kostentraegerId === edit.id).count();
               if (n > 0) return alert(`Wird noch von ${n} Patient(en) verwendet.`);
               if (confirm('Kostenträger löschen?')) {
-                await db.kostentraeger.delete(edit.id);
+                await loeschen('kostentraeger', edit.id);
                 setEdit(null);
               }
             }}
@@ -364,7 +372,7 @@ function AerzteListe() {
               const n = await db.rezepte.filter((r) => r.arztId === edit.id).count();
               if (n > 0) return alert(`Wird noch in ${n} Rezept(en) verwendet.`);
               if (confirm('Arzt löschen?')) {
-                await db.aerzte.delete(edit.id);
+                await loeschen('aerzte', edit.id);
                 setEdit(null);
               }
             }}

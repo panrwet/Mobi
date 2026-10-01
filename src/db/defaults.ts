@@ -42,6 +42,7 @@ export const defaultEinstellungen: Einstellungen = {
       einheit: 'pausch.',
       preis: 90,
       typ: 'pauschal',
+      zeitpunkt: 'beginn',
       leistungsart: 'O&M',
     },
     {
@@ -51,6 +52,7 @@ export const defaultEinstellungen: Einstellungen = {
       einheit: 'pausch.',
       preis: 45,
       typ: 'pauschal',
+      zeitpunkt: 'ende',
       leistungsart: 'O&M',
     },
     {
@@ -75,5 +77,6 @@ export const defaultEinstellungen: Einstellungen = {
   rezeptPraefix: 'VO-',
   naechsteRezeptNummer: 1,
   zuzahlungAktiv: false,
+  autoSperreMin: 5,
   theme: 'auto',
 };

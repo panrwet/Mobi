@@ -1,8 +1,8 @@
 // Schreibende Operationen auf der Datenbank. Alle fachlichen Abläufe (Nummernvergabe,
 // Statuswechsel, Rechnungserstellung) laufen hier zentral, damit die Seiten schlank bleiben.
-import { db, newId } from './db';
+import { db, loeschen, newId } from './db';
 import { defaultEinstellungen } from './defaults';
-import type { Einstellungen, Kostenvoranschlag, Rechnung, Rezept, Termin } from './types';
+import type { Bericht, Einstellungen, Kostenvoranschlag, Rechnung, Rezept, Termin } from './types';
 import { berechneZuzahlung, formatNummer, rechnungsPositionen, summePositionen } from '../lib/abrechnung';
 import { addDaysIso, isoDate, patientName, round2 } from '../lib/format';
 
@@ -114,11 +114,16 @@ export async function saveTermin(t: Omit<Termin, 'id'> & { id?: string }): Promi
 }
 
 export async function deleteTermin(id: string) {
-  await db.termine.delete(id);
+  const t = await db.termine.get(id);
+  if (t?.rechnungId) throw new Error('Der Termin ist bereits abgerechnet und kann nicht gelöscht werden.');
+  await loeschen('termine', id);
 }
 
-/** Erstellt eine Rechnung als unveränderlichen Schnappschuss aus KV, Terminen und Stammdaten */
-export async function createRechnung(rezeptId: string): Promise<string> {
+/**
+ * Erstellt eine Teil- oder Schlussrechnung als unveränderlichen Schnappschuss aus KV, Terminen und Stammdaten.
+ * Abgerechnete Termine werden mit der Rechnung verknüpft, damit sie nicht doppelt berechnet werden.
+ */
+export async function createRechnung(rezeptId: string, art: 'teil' | 'schluss' = 'schluss'): Promise<string> {
   return db.transaction('rw', [db.rezepte, db.termine, db.rechnungen, db.einstellungen, db.patienten, db.kostentraeger], async () => {
     const r = await db.rezepte.get(rezeptId);
     if (!r?.kv) throw new Error('Kein Kostenvoranschlag vorhanden');
@@ -126,23 +131,27 @@ export async function createRechnung(rezeptId: string): Promise<string> {
     if (!p) throw new Error('Patient nicht gefunden');
     const kt = r.kostentraegerId ? await db.kostentraeger.get(r.kostentraegerId) : undefined;
     const termine = await db.termine.where('rezeptId').equals(rezeptId).toArray();
+    const frueher = (await db.rechnungen.where('rezeptId').equals(rezeptId).toArray()).filter((x) => x.status !== 'storniert');
+    if (frueher.some((x) => x.art !== 'teil')) throw new Error('Für dieses Rezept gibt es bereits eine Schlussrechnung.');
     const e = await getEinstellungen();
 
-    const positionen = rechnungsPositionen(r.kv.positionen, termine);
-    if (positionen.length === 0) throw new Error('Keine abrechenbaren Leistungen');
+    const positionen = rechnungsPositionen(r.kv.positionen, termine, frueher.flatMap((x) => x.positionen), art);
+    if (positionen.length === 0) throw new Error('Keine (weiteren) abrechenbaren Leistungen');
     const datum = isoDate();
     const summe = summePositionen(positionen);
-    const zuzahlung = berechneZuzahlung(summe, p, e.zuzahlungAktiv, datum);
-    const daten = termine
-      .filter((t) => t.status === 'durchgefuehrt')
-      .map((t) => t.start.slice(0, 10))
-      .sort();
+    // Zuzahlung gilt für die gesamte Verordnung – bereits erhobene Beträge abziehen
+    const bisherSumme = frueher.reduce((s, x) => s + x.summe, 0);
+    const bisherZuzahlung = frueher.reduce((s, x) => s + x.zuzahlung, 0);
+    const zuzahlung = round2(Math.max(0, berechneZuzahlung(bisherSumme + summe, p, e.zuzahlungAktiv, datum) - bisherZuzahlung));
+    const abgerechnet = termine.filter((t) => t.status === 'durchgefuehrt' && !t.rechnungId);
+    const daten = abgerechnet.map((t) => t.start.slice(0, 10)).sort();
 
     const nummer = await naechsteNummer('naechsteRechnungsnummer', 'rechnungPraefix');
     const id = newId();
     const rechnung: Rechnung = {
       id,
       nummer,
+      art,
       rezeptId,
       patientId: p.id,
       kostentraegerId: r.kostentraegerId,
@@ -166,7 +175,10 @@ export async function createRechnung(rezeptId: string): Promise<string> {
       genehmigungsnummer: r.kv.genehmigungsnummer,
     };
     await db.rechnungen.add(rechnung);
-    await db.rezepte.update(rezeptId, { verlauf: [...r.verlauf, verlauf(`Rechnung ${nummer} erstellt`)] });
+    for (const t of abgerechnet) await db.termine.update(t.id, { rechnungId: id });
+    await db.rezepte.update(rezeptId, {
+      verlauf: [...r.verlauf, verlauf(`${art === 'teil' ? 'Teilrechnung' : 'Schlussrechnung'} ${nummer} erstellt`)],
+    });
     return id;
   });
 }
@@ -175,7 +187,7 @@ export async function rechnungBezahlt(id: string, datum: string) {
   const re = await db.rechnungen.get(id);
   if (!re) return;
   await db.rechnungen.update(id, { status: 'bezahlt', bezahltAm: datum });
-  await addVerlauf(re.rezeptId, `Zahlungseingang zu Rechnung ${re.nummer} – Rezept abgeschlossen`);
+  await addVerlauf(re.rezeptId, `Zahlungseingang zu Rechnung ${re.nummer}`);
 }
 
 export async function rechnungOffen(id: string) {
@@ -185,38 +197,59 @@ export async function rechnungOffen(id: string) {
 export async function rechnungMahnen(id: string) {
   const re = await db.rechnungen.get(id);
   if (!re) return;
-  await db.rechnungen.update(id, { mahnstufe: re.mahnstufe + 1 });
+  await db.rechnungen.update(id, { mahnstufe: re.mahnstufe + 1, mahnungen: [...(re.mahnungen ?? []), isoDate()] });
   await addVerlauf(re.rezeptId, `${re.mahnstufe + 1}. Zahlungserinnerung zu Rechnung ${re.nummer}`);
 }
 
-/** Rechnungen werden nie gelöscht, sondern storniert (GoBD) */
+/** Rechnungen werden nie gelöscht, sondern storniert (GoBD). Die Termine werden wieder abrechenbar. */
 export async function rechnungStornieren(id: string, grund: string) {
   const re = await db.rechnungen.get(id);
   if (!re) return;
-  await db.rechnungen.update(id, { status: 'storniert', storniertAm: isoDate(), stornoGrund: grund });
-  await addVerlauf(re.rezeptId, `Rechnung ${re.nummer} storniert${grund ? ': ' + grund : ''}`);
+  await db.transaction('rw', db.rechnungen, db.termine, db.rezepte, async () => {
+    await db.rechnungen.update(id, { status: 'storniert', storniertAm: isoDate(), stornoGrund: grund });
+    const termine = await db.termine.where('rezeptId').equals(re.rezeptId).toArray();
+    for (const t of termine.filter((x) => x.rechnungId === id)) await db.termine.update(t.id, { rechnungId: undefined });
+    await addVerlauf(re.rezeptId, `Rechnung ${re.nummer} storniert${grund ? ': ' + grund : ''}`);
+  });
 }
+
+export async function kvWiderspruch(rezeptId: string, datum: string, begruendung: string) {
+  const r = await db.rezepte.get(rezeptId);
+  if (!r?.kv) return;
+  await db.rezepte.update(rezeptId, {
+    kv: { ...r.kv, status: 'widerspruch', widerspruchAm: datum, widerspruchBegruendung: begruendung },
+    verlauf: [...r.verlauf, verlauf('Widerspruch gegen die Ablehnung eingelegt')],
+  });
+}
+
+// ---------- Berichte ----------
+
+export async function saveBericht(rezeptId: string, b: Bericht) {
+  const r = await db.rezepte.get(rezeptId);
+  if (!r) return;
+  const liste = r.berichte ?? [];
+  const neu = !liste.some((x) => x.id === b.id);
+  await db.rezepte.update(rezeptId, {
+    berichte: neu ? [...liste, b] : liste.map((x) => (x.id === b.id ? b : x)),
+    verlauf: neu ? [...r.verlauf, verlauf(`${BERICHT_TITEL[b.typ]} erstellt`)] : r.verlauf,
+  });
+}
+
+export async function deleteBericht(rezeptId: string, berichtId: string) {
+  const r = await db.rezepte.get(rezeptId);
+  if (!r) return;
+  await db.rezepte.update(rezeptId, { berichte: (r.berichte ?? []).filter((x) => x.id !== berichtId) });
+}
+
+export const BERICHT_TITEL: Record<Bericht['typ'], string> = {
+  eingang: 'Eingangsbefund',
+  verlauf: 'Verlaufsbericht',
+  abschluss: 'Abschlussbericht',
+};
 
 // ---------- Datensicherung ----------
 
-export const TABELLEN = ['patienten', 'rezepte', 'termine', 'rechnungen', 'kostentraeger', 'aerzte', 'einstellungen'] as const;
-
-export async function exportAlles(): Promise<string> {
-  const daten: Record<string, unknown[]> = {};
-  for (const t of TABELLEN) daten[t] = await db.table(t).toArray();
-  return JSON.stringify({ app: 'mobi', version: 1, exportiertAm: new Date().toISOString(), daten }, null, 2);
-}
-
-export async function importAlles(json: string) {
-  const parsed = JSON.parse(json);
-  if (parsed?.app !== 'mobi' || !parsed.daten) throw new Error('Keine gültige Mobi-Sicherung');
-  await db.transaction('rw', TABELLEN.map((t) => db.table(t)), async () => {
-    for (const t of TABELLEN) {
-      await db.table(t).clear();
-      if (Array.isArray(parsed.daten[t])) await db.table(t).bulkAdd(parsed.daten[t]);
-    }
-  });
-}
+export const TABELLEN = ['patienten', 'rezepte', 'termine', 'rechnungen', 'kostentraeger', 'aerzte', 'einstellungen', 'dokumente', 'geloescht'] as const;
 
 export async function allesLoeschen() {
   await db.transaction('rw', TABELLEN.map((t) => db.table(t)), async () => {

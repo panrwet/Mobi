@@ -15,6 +15,7 @@ import { pdf } from '../lib/pdfLazy';
 const ausLeistung = (l: Leistung, menge: number): Position => ({
   leistungId: l.id,
   typ: l.typ,
+  zeitpunkt: l.zeitpunkt,
   bezeichnung: l.bezeichnung,
   positionsnummer: l.positionsnummer,
   menge,
@@ -30,24 +31,32 @@ export function KVForm() {
   const toast = useToast();
   const e = useEinstellungen();
   const r = useLiveQuery(() => db.rezepte.get(id!), [id]);
+  const vorgaenger = useLiveQuery(async () => {
+    if (!r?.vorgaengerId) return null;
+    const v = await db.rezepte.get(r.vorgaengerId);
+    if (!v) return null;
+    const ts = await db.termine.where('rezeptId').equals(v.id).toArray();
+    return { v, ue: ts.filter((t) => t.status === 'durchgefuehrt').reduce((s, t) => s + t.einheiten, 0) };
+  }, [r?.vorgaengerId]);
   const [kv, setKv] = useState<KVDaten | null>(null);
   const [neueLeistung, setNeueLeistung] = useState('');
 
-  if (!r) return <Page title="Kostenvoranschlag" back>…</Page>;
+  if (!r || (r.vorgaengerId && vorgaenger === undefined)) return <Page title="Kostenvoranschlag" back>…</Page>;
 
   const vorschlag = (): KVDaten => {
     const haupt = e.leistungen.find((l) => l.typ === 'einheit' && l.leistungsart === r.leistungsart) ?? e.leistungen.find((l) => l.typ === 'einheit');
     const pos: Position[] = [];
     const erst = e.leistungen.find((l) => l.id === 'l-erst');
     const bericht = e.leistungen.find((l) => l.id === 'l-bericht');
-    if (erst) pos.push(ausLeistung(erst, 1));
+    if (erst && !vorgaenger) pos.push(ausLeistung(erst, 1));
     if (haupt) pos.push(ausLeistung(haupt, r.verordneteEinheiten));
     if (bericht) pos.push(ausLeistung(bericht, 1));
     return {
       datum: isoDate(),
       positionen: pos,
-      begruendung:
-        'Aufgrund der Sehbehinderung ist eine sichere und selbstständige Fortbewegung ohne ein Training im Gebrauch des Blindenlangstocks nicht möglich. Das Training ist für die Nutzung des Hilfsmittels erforderlich (§ 33 Abs. 1 SGB V).',
+      begruendung: vorgaenger
+        ? `Folgeantrag zu ${vorgaenger.v.nummer} (KV ${vorgaenger.v.kv?.nummer ?? '–'}): Im bisherigen Training wurden ${vorgaenger.ue} Einheiten geleistet. Die Trainingsziele sind noch nicht vollständig erreicht; zur Sicherung des Trainingserfolgs ist eine Fortsetzung erforderlich. Ein Verlaufsbericht liegt bei.`
+        : 'Aufgrund der Sehbehinderung ist eine sichere und selbstständige Fortbewegung ohne ein Training im Gebrauch des Blindenlangstocks nicht möglich. Das Training ist für die Nutzung des Hilfsmittels erforderlich (§ 33 Abs. 1 SGB V).',
       ziele: 'Sichere Anwendung der Langstocktechniken, selbstständiges Bewältigen alltagsrelevanter Wege, sichere Straßenquerung und Nutzung des ÖPNV.',
       status: 'entwurf',
     };

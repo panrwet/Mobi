@@ -2,7 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { db, newId } from '../db/db';
-import { createRechnung, kvAntwort, kvVersenden, reaktiviereRezept, storniereRezept } from '../db/actions';
+import { BERICHT_TITEL, createRechnung, kvAntwort, kvVersenden, kvWiderspruch, reaktiviereRezept, storniereRezept } from '../db/actions';
+import { Dokumente } from '../components/Dokumente';
 import type { KVStatus, Position, Termin } from '../db/types';
 import { Page } from '../components/Layout';
 import { Icon } from '../components/Icon';
@@ -14,7 +15,7 @@ import { pdf } from '../lib/pdfLazy';
 import { konflikte, serienTermine } from '../lib/planung';
 import { KV_STATUS, TERMIN_STATUS } from '../lib/status';
 
-type Tab = 'uebersicht' | 'kv' | 'termine' | 'rechnung' | 'verlauf';
+type Tab = 'uebersicht' | 'kv' | 'termine' | 'rechnung' | 'berichte' | 'dokumente' | 'verlauf';
 
 export function RezeptDetail() {
   const { id } = useParams();
@@ -30,11 +31,14 @@ export function RezeptDetail() {
   const arzt = useLiveQuery(async () => (info?.rezept.arztId ? db.aerzte.get(info.rezept.arztId) : undefined), [info?.rezept.arztId]);
   const [antwortOffen, setAntwortOffen] = useState(false);
   const [serieOffen, setSerieOffen] = useState(false);
+  const [widerspruchOffen, setWiderspruchOffen] = useState(false);
 
   if (!alle) return <Page title="Rezept" back>…</Page>;
   if (!info) return <Page title="Rezept" back><Empty>Rezept nicht gefunden.</Empty></Page>;
 
   const { rezept: r, patient: p, kostentraeger: kt, termine, rechnungen, a } = info;
+  const vorgaenger = alle.find((i) => i.rezept.id === r.vorgaengerId);
+  const nachfolger = alle.filter((i) => i.rezept.vorgaengerId === r.id);
   const kv = r.kv;
   const sortiert = [...termine].sort((x, y) => x.start.localeCompare(y.start));
 
@@ -61,7 +65,10 @@ export function RezeptDetail() {
       case 'abgerechnet':
         return a.aktiveRechnung && nav(`/rechnungen/${a.aktiveRechnung.id}`);
       case 'kv_abgelehnt':
-        return setTab('kv');
+        setTab('kv');
+        return setWiderspruchOffen(true);
+      case 'kv_widerspruch':
+        return setAntwortOffen(true);
     }
   };
 
@@ -73,10 +80,10 @@ export function RezeptDetail() {
 
   const kvAlsPdf = () => p && pdf((m) => m.kvPdf(r, p, e, kt, arzt), `${kv?.nummer}.pdf`);
 
-  const rechnungErstellen = async () => {
-    if (a.phase !== 'abrechenbar' && !confirm('Es sind noch nicht alle genehmigten Einheiten geleistet und dokumentiert. Trotzdem (vorzeitig) abrechnen?')) return;
+  const rechnungErstellen = async (art: 'teil' | 'schluss') => {
+    if (art === 'schluss' && a.phase !== 'abrechenbar' && !confirm('Es sind noch nicht alle genehmigten Einheiten geleistet und dokumentiert. Trotzdem die Schlussrechnung erstellen (Behandlung vorzeitig beendet)?')) return;
     try {
-      const reId = await createRechnung(r.id);
+      const reId = await createRechnung(r.id, art);
       toast('Rechnung erstellt');
       nav(`/rechnungen/${reId}`);
     } catch (err) {
@@ -92,7 +99,10 @@ export function RezeptDetail() {
   };
 
   const offeneEinheiten = Math.max(0, a.zielEinheiten - a.geleistetEinheiten - a.geplantEinheiten);
-  const vorschau = kv ? rechnungsPositionen(kv.positionen, termine) : [];
+  const frueherePositionen = rechnungen.filter((x) => x.status !== 'storniert').flatMap((x) => x.positionen);
+  const vorschau = kv ? rechnungsPositionen(kv.positionen, termine, frueherePositionen, 'schluss') : [];
+  const schlussVorhanden = rechnungen.some((x) => x.status !== 'storniert' && x.art !== 'teil');
+  const kvOk = kv?.status === 'genehmigt' || kv?.status === 'teilgenehmigt';
 
   return (
     <Page
@@ -128,6 +138,16 @@ export function RezeptDetail() {
             </span>
           ))}
         </div>
+        {vorgaenger && (
+          <div className="small" style={{ marginTop: 8 }}>
+            ↳ Folgeverordnung zu <Link to={`/rezepte/${vorgaenger.rezept.id}`}>{vorgaenger.rezept.nummer}</Link> ({vorgaenger.a.geleistetEinheiten} UE geleistet)
+          </div>
+        )}
+        {nachfolger.map((n) => (
+          <div key={n.rezept.id} className="small" style={{ marginTop: 8 }}>
+            → Folgeverordnung: <Link to={`/rezepte/${n.rezept.id}`}>{n.rezept.nummer}</Link> ({n.a.label})
+          </div>
+        ))}
         {a.warnungen.map((w) => (
           <Alert key={w.text} tone={w.tone}>
             {w.text}
@@ -148,12 +168,19 @@ export function RezeptDetail() {
           ['kv', 'KV'],
           ['termine', `Termine (${termine.length})`],
           ['rechnung', 'Rechnung'],
+          ['berichte', `Berichte${r.berichte?.length ? ` (${r.berichte.length})` : ''}`],
+          ['dokumente', 'Dokumente'],
           ['verlauf', 'Verlauf'],
         ]}
       />
 
       {tab === 'uebersicht' && (
         <>
+          {!r.storniert && (
+            <Link to={`/rezepte/neu?folge=${r.id}`} className="btn block" style={{ marginBottom: 14 }}>
+              <Icon name="repeat" size={18} /> Folgeverordnung anlegen
+            </Link>
+          )}
           <Card title="Einheiten">
             <div className="progress" aria-label="Fortschritt Einheiten">
               <i style={{ width: `${Math.min(100, (a.geleistetEinheiten / Math.max(1, a.zielEinheiten)) * 100)}%` }} />
@@ -235,6 +262,12 @@ export function RezeptDetail() {
                     <dd>{kv.antwortNotiz}</dd>
                   </>
                 )}
+                {kv.widerspruchAm && (
+                  <>
+                    <dt>Widerspruch</dt>
+                    <dd>{formatDate(kv.widerspruchAm)}</dd>
+                  </>
+                )}
               </dl>
               <PositionenTabelle positionen={kv.positionen} />
               <div className="form-actions">
@@ -247,6 +280,16 @@ export function RezeptDetail() {
                 {kv.status === 'entwurf' && (
                   <button className="btn primary" onClick={versenden}>
                     <Icon name="send" size={18} /> Als versendet markieren
+                  </button>
+                )}
+                {kv.status === 'abgelehnt' && (
+                  <button className="btn" onClick={() => setWiderspruchOffen(true)}>
+                    Widerspruch einlegen
+                  </button>
+                )}
+                {kv.status === 'widerspruch' && (
+                  <button className="btn" onClick={() => p && pdf((m) => m.widerspruchPdf(r, p, e, kt), `Widerspruch-${kv.nummer}.pdf`)}>
+                    <Icon name="pdf" size={18} /> Widerspruch
                   </button>
                 )}
                 {kv.status !== 'entwurf' && (
@@ -303,39 +346,82 @@ export function RezeptDetail() {
       )}
 
       {tab === 'rechnung' && (
-        <Card title="Rechnung">
+        <Card title="Rechnungen">
           {rechnungen.length > 0 && (
             <ul className="list" style={{ marginBottom: 10 }}>
-              {rechnungen.map((re) => (
-                <ListLink
-                  key={re.id}
-                  to={`/rechnungen/${re.id}`}
-                  title={`${re.nummer} · ${formatEuro(re.zahlbetrag)}`}
-                  sub={`vom ${formatDate(re.datum)}`}
-                  right={<Badge tone={re.status === 'bezahlt' ? 'ok' : re.status === 'storniert' ? 'neutral' : 'warn'}>{re.status}</Badge>}
-                />
-              ))}
+              {[...rechnungen]
+                .sort((x, y) => x.datum.localeCompare(y.datum))
+                .map((re) => (
+                  <ListLink
+                    key={re.id}
+                    to={`/rechnungen/${re.id}`}
+                    title={`${re.art === 'teil' ? 'Teilrechnung' : 'Schlussrechnung'} ${re.nummer}`}
+                    sub={`vom ${formatDate(re.datum)} · ${formatEuro(re.zahlbetrag)}`}
+                    right={<Badge tone={re.status === 'bezahlt' ? 'ok' : re.status === 'storniert' ? 'neutral' : 'warn'}>{re.status}</Badge>}
+                  />
+                ))}
             </ul>
           )}
-          {!a.aktiveRechnung && kv && (kv.status === 'genehmigt' || kv.status === 'teilgenehmigt') && (
+          {!kv && <Empty>Zuerst Kostenvoranschlag erstellen und genehmigen lassen.</Empty>}
+          {kv && !kvOk && !schlussVorhanden && <Empty>Der KV ist noch nicht genehmigt.</Empty>}
+          {kvOk && !schlussVorhanden && (
             <>
               {vorschau.length > 0 ? (
                 <>
-                  <p className="small muted">Vorschau aus KV und geleisteten Terminen:</p>
+                  <p className="small muted">
+                    Noch nicht abgerechnet: {a.nichtAbgerechnet} UE. Vorschau Schlussrechnung:
+                  </p>
                   <PositionenTabelle positionen={vorschau} />
                 </>
               ) : (
-                <Empty>Noch keine geleisteten Einheiten.</Empty>
+                <Empty>Noch keine (weiteren) geleisteten Einheiten.</Empty>
               )}
-              <button className="btn primary block" disabled={a.geleistetEinheiten === 0} onClick={rechnungErstellen}>
-                Rechnung erstellen
-              </button>
+              <div className="form-actions">
+                <button className="btn" disabled={a.nichtAbgerechnet === 0} onClick={() => rechnungErstellen('teil')}>
+                  Teilrechnung
+                </button>
+                <button className="btn primary" disabled={vorschau.length === 0} onClick={() => rechnungErstellen('schluss')}>
+                  Schlussrechnung erstellen
+                </button>
+              </div>
+              <p className="hint" style={{ marginTop: 8 }}>
+                Teilrechnung: rechnet die bisher geleisteten Einheiten ab (z. B. bei langen Trainings). Die Schlussrechnung enthält alle restlichen Leistungen inkl. Abschlussbericht.
+              </p>
             </>
           )}
-          {!kv && <Empty>Zuerst Kostenvoranschlag erstellen und genehmigen lassen.</Empty>}
-          {kv && !(kv.status === 'genehmigt' || kv.status === 'teilgenehmigt') && !a.aktiveRechnung && <Empty>Der KV ist noch nicht genehmigt.</Empty>}
         </Card>
       )}
+
+      {tab === 'berichte' && (
+        <Card title="Berichte an Arzt / Kostenträger">
+          {(r.berichte ?? []).length === 0 && <Empty>Noch keine Berichte.</Empty>}
+          <ul className="list">
+            {(r.berichte ?? []).map((b) => (
+              <ListLink
+                key={b.id}
+                to={`/rezepte/${r.id}/bericht/${b.id}`}
+                left={<Icon name="report" />}
+                title={BERICHT_TITEL[b.typ]}
+                sub={`${formatDate(b.datum)} · ${b.empfaenger === 'arzt' ? 'an Arzt' : b.empfaenger === 'kostentraeger' ? 'an Kostenträger' : 'an Kostenträger + Arzt'}`}
+                right={b.versendetAm ? <Badge tone="ok">versendet</Badge> : <Badge tone="info">Entwurf</Badge>}
+              />
+            ))}
+          </ul>
+          <div className="form-actions">
+            <Link className="btn small" to={`/rezepte/${r.id}/bericht/neu?typ=eingang`}>
+              + Eingangsbefund
+            </Link>
+            <Link className="btn small" to={`/rezepte/${r.id}/bericht/neu?typ=verlauf`}>
+              + Verlaufsbericht
+            </Link>
+            <Link className="btn small primary" to={`/rezepte/${r.id}/bericht/neu?typ=abschluss`}>
+              + Abschlussbericht
+            </Link>
+          </div>
+        </Card>
+      )}
+
+      {tab === 'dokumente' && <Dokumente patientId={r.patientId} rezeptId={r.id} titel="Dokumente zu diesem Rezept" />}
 
       {tab === 'verlauf' && (
         <>
@@ -364,6 +450,7 @@ export function RezeptDetail() {
       )}
 
       {kv && <KVAntwortSheet open={antwortOffen} onClose={() => setAntwortOffen(false)} rezeptId={r.id} vorschlag={kv.genehmigteEinheiten ?? r.verordneteEinheiten} status={kv.status} nummer={kv.genehmigungsnummer} />}
+      <WiderspruchSheet open={widerspruchOffen} onClose={() => setWiderspruchOffen(false)} rezeptId={r.id} />
       <SerieSheet
         open={serieOffen}
         onClose={() => setSerieOffen(false)}
@@ -465,6 +552,35 @@ function KVAntwortSheet({ open, onClose, rezeptId, vorschlag, status, nummer }: 
       </Field>
       <button className="btn primary block" onClick={speichern}>
         Speichern
+      </button>
+    </Sheet>
+  );
+}
+
+function WiderspruchSheet({ open, onClose, rezeptId }: { open: boolean; onClose: () => void; rezeptId: string }) {
+  const toast = useToast();
+  const [datum, setDatum] = useState(isoDate());
+  const [text, setText] = useState(
+    'Das Training im Gebrauch des Blindenlangstocks ist untrennbarer Bestandteil der Hilfsmittelversorgung (§ 33 Abs. 1 SGB V). Ohne Training ist ein sicherer Gebrauch des Hilfsmittels nicht möglich. ',
+  );
+  return (
+    <Sheet open={open} onClose={onClose} title="Widerspruch einlegen">
+      <Field label="Datum des Widerspruchs">
+        <input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} />
+      </Field>
+      <Field label="Begründung">
+        <textarea rows={7} value={text} onChange={(e) => setText(e.target.value)} />
+      </Field>
+      <p className="hint">Widerspruchsfrist in der Regel 1 Monat ab Bekanntgabe des Bescheids. Das Schreiben kann anschließend als PDF erstellt werden.</p>
+      <button
+        className="btn primary block"
+        onClick={async () => {
+          await kvWiderspruch(rezeptId, datum, text);
+          toast('Widerspruch vermerkt');
+          onClose();
+        }}
+      >
+        Widerspruch vermerken
       </button>
     </Sheet>
   );

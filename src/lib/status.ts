@@ -7,6 +7,7 @@ export type RezeptPhase =
   | 'kv_entwurf'
   | 'kv_versendet'
   | 'kv_abgelehnt'
+  | 'kv_widerspruch'
   | 'genehmigt'
   | 'termine_verplant'
   | 'in_behandlung'
@@ -22,7 +23,8 @@ export const PHASEN: Record<RezeptPhase, { label: string; tone: Tone; aktion: st
   neu: { label: 'Neu', tone: 'info', aktion: 'Kostenvoranschlag erstellen', reihenfolge: 1 },
   kv_entwurf: { label: 'KV in Arbeit', tone: 'info', aktion: 'KV fertigstellen und versenden', reihenfolge: 2 },
   kv_versendet: { label: 'KV versendet', tone: 'neutral', aktion: 'Genehmigung abwarten', reihenfolge: 3 },
-  kv_abgelehnt: { label: 'KV abgelehnt', tone: 'danger', aktion: 'Widerspruch prüfen oder Rezept stornieren', reihenfolge: 0 },
+  kv_abgelehnt: { label: 'KV abgelehnt', tone: 'danger', aktion: 'Widerspruch einlegen oder Rezept stornieren', reihenfolge: 0 },
+  kv_widerspruch: { label: 'Widerspruch läuft', tone: 'warn', aktion: 'Entscheidung des Kostenträgers abwarten', reihenfolge: 3 },
   genehmigt: { label: 'Genehmigt', tone: 'info', aktion: 'Termine planen', reihenfolge: 4 },
   termine_verplant: { label: 'Termine verplant', tone: 'neutral', aktion: 'Termine durchführen', reihenfolge: 5 },
   in_behandlung: { label: 'In Behandlung', tone: 'neutral', aktion: 'Termine durchführen und dokumentieren', reihenfolge: 6 },
@@ -56,6 +58,8 @@ export interface RezeptAuswertung {
   warnungen: Warnung[];
   schritte: Schritt[];
   aktiveRechnung?: Rechnung;
+  /** geleistete Einheiten, die noch in keiner Rechnung stehen */
+  nichtAbgerechnet: number;
   offen: boolean; // gehört in die Eingangsliste
 }
 
@@ -82,17 +86,24 @@ export function werteRezeptAus(
     return s ? s.getTime() + t.dauerMin * 60000 < jetzt.getTime() : false;
   }).length;
 
+  const nichtAbgerechnet = sumEinheiten(durchgefuehrt.filter((t) => !t.rechnungId));
   const gueltige = rechnungen.filter((r) => r.status !== 'storniert');
-  const aktiveRechnung = gueltige.find((r) => r.status === 'offen') ?? gueltige.find((r) => r.status === 'bezahlt');
+  // Rechnungen ohne Art (ältere Daten) gelten als Schlussrechnung
+  const schluss = gueltige.filter((r) => r.art !== 'teil');
+  const aktiveRechnung =
+    schluss.find((r) => r.status === 'offen') ??
+    schluss.find((r) => r.status === 'bezahlt') ??
+    [...gueltige].sort((a, b) => b.datum.localeCompare(a.datum))[0];
+  const alleBezahlt = gueltige.every((r) => r.status === 'bezahlt');
 
   let phase: RezeptPhase;
   if (rezept.storniert) phase = 'storniert';
-  else if (gueltige.some((r) => r.status === 'offen')) phase = 'abgerechnet';
-  else if (gueltige.some((r) => r.status === 'bezahlt')) phase = 'abgeschlossen';
+  else if (schluss.length > 0) phase = alleBezahlt ? 'abgeschlossen' : 'abgerechnet';
   else if (!kv) phase = 'neu';
   else if (kv.status === 'entwurf') phase = 'kv_entwurf';
   else if (kv.status === 'versendet') phase = 'kv_versendet';
   else if (kv.status === 'abgelehnt') phase = 'kv_abgelehnt';
+  else if (kv.status === 'widerspruch') phase = 'kv_widerspruch';
   else if (geleistetEinheiten >= zielEinheiten) phase = dokuFehlt > 0 ? 'doku_offen' : 'abrechenbar';
   else if (geleistetEinheiten > 0) phase = 'in_behandlung';
   else if (geplantEinheiten >= zielEinheiten) phase = 'termine_verplant';
@@ -130,14 +141,16 @@ export function werteRezeptAus(
         tone: 'danger',
       });
     }
-    if (aktiveRechnung?.status === 'offen') {
-      const faellig = parseDate(aktiveRechnung.faelligAm);
+    for (const re of gueltige.filter((r) => r.status === 'offen')) {
+      const faellig = parseDate(re.faelligAm);
       if (faellig && daysBetween(faellig, jetzt) > 0) {
-        warnungen.push({
-          text: `Rechnung ${aktiveRechnung.nummer} seit ${daysBetween(faellig, jetzt)} Tagen überfällig`,
-          tone: 'danger',
-        });
+        warnungen.push({ text: `Rechnung ${re.nummer} seit ${daysBetween(faellig, jetzt)} Tagen überfällig`, tone: 'danger' });
       }
+    }
+    const berichtImKv = kv?.positionen.some((p) => p.typ === 'pauschal' && (p.zeitpunkt === 'ende' || p.leistungId === 'l-bericht'));
+    const hatAbschluss = rezept.berichte?.some((b) => b.typ === 'abschluss');
+    if ((phase === 'abrechenbar' || phase === 'doku_offen') && berichtImKv && !hatAbschluss) {
+      warnungen.push({ text: 'Abschlussbericht noch nicht erstellt', tone: 'warn' });
     }
   }
 
@@ -148,8 +161,8 @@ export function werteRezeptAus(
     { label: 'Termine verplant', erledigt: geleistetEinheiten + geplantEinheiten >= zielEinheiten },
     { label: 'Termine geleistet', erledigt: geleistetEinheiten >= zielEinheiten },
     { label: 'Doku vollständig', erledigt: geleistetEinheiten >= zielEinheiten && dokuFehlt === 0 },
-    { label: 'Rechnung gestellt', erledigt: !!aktiveRechnung },
-    { label: 'Bezahlt', erledigt: aktiveRechnung?.status === 'bezahlt' },
+    { label: 'Rechnung gestellt', erledigt: schluss.length > 0 },
+    { label: 'Bezahlt', erledigt: schluss.length > 0 && alleBezahlt },
   ];
 
   const info = PHASEN[phase];
@@ -166,6 +179,7 @@ export function werteRezeptAus(
     warnungen,
     schritte,
     aktiveRechnung,
+    nichtAbgerechnet,
     offen: aktiv,
   };
 }
@@ -176,6 +190,7 @@ export function prioritaet(a: RezeptAuswertung): number {
   const hatWarn = a.warnungen.length > 0;
   const phasePrio: Partial<Record<RezeptPhase, number>> = {
     kv_abgelehnt: 0,
+    kv_widerspruch: 8,
     abrechenbar: 1,
     doku_offen: 2,
     neu: 3,
@@ -203,4 +218,5 @@ export const KV_STATUS: Record<NonNullable<Rezept['kv']>['status'], { label: str
   genehmigt: { label: 'Genehmigt', tone: 'ok' },
   teilgenehmigt: { label: 'Teilweise genehmigt', tone: 'warn' },
   abgelehnt: { label: 'Abgelehnt', tone: 'danger' },
+  widerspruch: { label: 'Widerspruch eingelegt', tone: 'warn' },
 };

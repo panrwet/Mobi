@@ -2,6 +2,11 @@
 
 export type ID = string;
 
+/** Wird von der Datenbank bei jeder Änderung automatisch gesetzt (für den Geräte-Abgleich) */
+export interface Stempel {
+  geaendertAm?: string;
+}
+
 export type KostentraegerTyp = 'GKV' | 'PKV' | 'Beihilfe' | 'Sozialhilfe' | 'Eingliederungshilfe' | 'BG' | 'DRV' | 'Agentur' | 'Selbstzahler' | 'Sonstige';
 
 export interface Adresse {
@@ -10,7 +15,7 @@ export interface Adresse {
   ort: string;
 }
 
-export interface Kostentraeger {
+export interface Kostentraeger extends Stempel {
   id: ID;
   name: string;
   typ: KostentraegerTyp;
@@ -22,7 +27,7 @@ export interface Kostentraeger {
   notiz?: string;
 }
 
-export interface Arzt {
+export interface Arzt extends Stempel {
   id: ID;
   titel?: string;
   name: string;
@@ -36,7 +41,7 @@ export interface Arzt {
 
 export type Sehstatus = 'blind' | 'hochgradig sehbehindert' | 'sehbehindert' | 'sonstige';
 
-export interface Patient {
+export interface Patient extends Stempel {
   id: ID;
   anrede: 'Frau' | 'Herr' | 'Divers' | '';
   vorname: string;
@@ -69,7 +74,7 @@ export interface Patient {
   erstelltAm: string;
 }
 
-export type KVStatus = 'entwurf' | 'versendet' | 'genehmigt' | 'teilgenehmigt' | 'abgelehnt';
+export type KVStatus = 'entwurf' | 'versendet' | 'genehmigt' | 'teilgenehmigt' | 'abgelehnt' | 'widerspruch';
 
 /** einheit = Menge richtet sich nach geleisteten Einheiten, pauschal = fester Betrag, km = Fahrtkosten */
 export type PositionTyp = 'einheit' | 'pauschal' | 'km';
@@ -77,6 +82,8 @@ export type PositionTyp = 'einheit' | 'pauschal' | 'km';
 export interface Position {
   leistungId?: ID;
   typ: PositionTyp;
+  /** nur bei Pauschalen: mit der ersten Rechnung (beginn) oder erst mit der Schlussrechnung (ende) abrechnen */
+  zeitpunkt?: 'beginn' | 'ende';
   bezeichnung: string;
   positionsnummer?: string;
   menge: number;
@@ -96,6 +103,8 @@ export interface Kostenvoranschlag {
   genehmigungsnummer?: string;
   genehmigteEinheiten?: number;
   antwortNotiz?: string;
+  widerspruchAm?: string;
+  widerspruchBegruendung?: string;
 }
 
 export interface VerlaufEintrag {
@@ -105,7 +114,22 @@ export interface VerlaufEintrag {
 
 export type Leistungsart = 'O&M' | 'LPF' | 'Sonstige';
 
-export interface Rezept {
+export type BerichtTyp = 'eingang' | 'verlauf' | 'abschluss';
+
+export interface Bericht {
+  id: ID;
+  typ: BerichtTyp;
+  datum: string;
+  empfaenger: 'arzt' | 'kostentraeger' | 'beide';
+  ausgangslage: string;
+  ziele: string;
+  verlauf: string;
+  ergebnis: string;
+  empfehlung: string;
+  versendetAm?: string;
+}
+
+export interface Rezept extends Stempel {
   id: ID;
   nummer: string;
   patientId: ID;
@@ -119,6 +143,9 @@ export interface Rezept {
   verordnung: string; // Text der Verordnung
   verordneteEinheiten: number;
   kv?: Kostenvoranschlag;
+  berichte?: Bericht[];
+  /** Folgeverordnung zu diesem Rezept */
+  vorgaengerId?: ID;
   notizen?: string;
   verlauf: VerlaufEintrag[];
   storniert?: boolean;
@@ -134,7 +161,7 @@ export interface Dokumentation {
   erstelltAm: string;
 }
 
-export interface Termin {
+export interface Termin extends Stempel {
   id: ID;
   rezeptId: ID;
   patientId: ID;
@@ -147,13 +174,17 @@ export interface Termin {
   doku?: Dokumentation;
   unterschrift?: string; // DataURL der Patientenunterschrift
   notiz?: string;
+  /** Rechnung, mit der dieser Termin abgerechnet wurde */
+  rechnungId?: ID;
 }
 
 export type RechnungStatus = 'offen' | 'bezahlt' | 'storniert';
 
-export interface Rechnung {
+export interface Rechnung extends Stempel {
   id: ID;
   nummer: string;
+  /** Teilrechnung (Abschlag während der Behandlung) oder Schlussrechnung */
+  art: 'teil' | 'schluss';
   rezeptId: ID;
   patientId: ID;
   kostentraegerId: ID | '';
@@ -169,6 +200,7 @@ export interface Rechnung {
   storniertAm?: string;
   stornoGrund?: string;
   mahnstufe: number;
+  mahnungen?: string[]; // Daten der Zahlungserinnerungen
   // Schnappschüsse: Rechnungen sind nach Erstellung unveränderlich (GoBD)
   empfaenger: { name: string; adresse: Adresse; ik?: string };
   patientInfo: { name: string; geburtsdatum: string; versichertennummer: string };
@@ -182,10 +214,39 @@ export interface Leistung {
   einheit: string;
   preis: number;
   typ: PositionTyp;
+  zeitpunkt?: 'beginn' | 'ende';
   leistungsart: Leistungsart;
 }
 
-export interface Einstellungen {
+export type DokumentKategorie = 'Verordnung' | 'Genehmigung' | 'Bescheid' | 'Befund' | 'Schriftverkehr' | 'Einwilligung' | 'Sonstiges';
+
+export interface Dokument extends Stempel {
+  id: ID;
+  patientId: ID;
+  rezeptId?: ID;
+  titel: string;
+  kategorie: DokumentKategorie;
+  datum: string;
+  mime: string;
+  groesse: number;
+  daten: string; // DataURL (wird verschlüsselt gespeichert)
+  erstelltAm: string;
+}
+
+/** Unverschlüsselte Verwaltungsdaten (Schlüsselablage, Geräte-ID) */
+export type Meta =
+  | { id: 'krypto'; salt: string; iterationen: number; dekVerpackt: string; erstelltAm: string }
+  | { id: 'geraet'; geraeteId: string; letzterAbgleich?: string };
+
+/** Löschvermerk, damit Löschungen beim Geräte-Abgleich übertragen werden */
+export interface Geloescht {
+  id: string; // `${tabelle}:${schluessel}`
+  tabelle: string;
+  schluessel: string;
+  am: string;
+}
+
+export interface Einstellungen extends Stempel {
   id: 'main';
   // Praxis / Reha-Fachkraft
   name: string;
@@ -217,6 +278,7 @@ export interface Einstellungen {
   rezeptPraefix: string;
   naechsteRezeptNummer: number;
   zuzahlungAktiv: boolean;
+  autoSperreMin: number;
   // Darstellung
   theme: 'auto' | 'hell' | 'dunkel';
 }

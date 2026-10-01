@@ -250,6 +250,10 @@ textarea {
 }
 .btn.block {
   width: 100%;
+  white-space: normal;
+  text-align: center;
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 .btn:disabled {
   opacity: 0.5;
@@ -412,12 +416,12 @@ textarea {
 .tiles {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 14px;
 }
-@media (min-width: 640px) {
+@media (min-width: 800px) {
   .tiles {
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(9, 1fr);
   }
 }
 .tile {
@@ -433,9 +437,10 @@ textarea {
   box-shadow: var(--shadow);
   color: var(--text);
   text-decoration: none;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 600;
   text-align: center;
+  min-width: 0;
 }
 .tile svg {
   width: 26px;
@@ -449,6 +454,8 @@ textarea {
   margin-bottom: 14px;
 }
 .kpi {
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 12px;
   border-radius: var(--radius);
   background: var(--surface);
@@ -876,15 +883,15 @@ table.tbl {
 }
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   background: var(--surface-2);
   padding: 4px;
   border-radius: 12px;
   margin-bottom: 14px;
-  overflow-x: auto;
 }
 .tabs button {
-  flex: 1;
+  flex: 1 0 auto;
   border: 0;
   background: transparent;
   padding: 8px 10px;
@@ -941,4 +948,112 @@ table.tbl {
   .show-sm {
     display: block;
   }
+}
+
+/* Sperrbildschirm */
+.sperre {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: linear-gradient(160deg, var(--primary) 0%, var(--bg) 70%);
+}
+.sperre-box {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  border-radius: 22px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
+  padding: 28px 22px;
+  text-align: center;
+}
+.sperre-box h1 {
+  font-size: 1.3rem;
+  margin: 10px 0 8px;
+}
+.sperre-logo img {
+  border-radius: 16px;
+}
+.pin-input {
+  text-align: center;
+  font-size: 1.4rem !important;
+  letter-spacing: 0.3em;
+  margin-bottom: 12px;
+}
+.pin-input::placeholder {
+  letter-spacing: normal;
+  font-size: 1rem;
+}
+
+/* Säulendiagramm (Statistik) */
+:root {
+  --chart-1: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='hell']) {
+    --chart-1: #3987e5;
+  }
+}
+:root[data-theme='dunkel'] {
+  --chart-1: #3987e5;
+}
+.saeulen-flaeche {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 160px;
+  padding-top: 26px;
+  border-bottom: 1px solid var(--border);
+}
+.saeule-spalte {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: default;
+  outline: none;
+}
+.saeule-spalte:focus-visible {
+  background: var(--surface-2);
+  border-radius: 4px;
+}
+.saeule {
+  width: 70%;
+  max-width: 26px;
+  min-height: 0;
+  background: var(--chart-1);
+  border-radius: 4px 4px 0 0;
+  transition: opacity 0.15s;
+}
+.saeule-tip {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--text);
+  pointer-events: none;
+  z-index: 2;
+}
+.saeule-tip.aktiv {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.saeulen-achse {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+}
+.saeulen-achse span {
+  flex: 1;
+  text-align: center;
+  font-size: 0.66rem;
+  color: var(--muted);
 }

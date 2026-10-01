@@ -1,4 +1,5 @@
 import { Page } from '../components/Layout';
+import { sperren } from '../db/schutz';
 import { Icon } from '../components/Icon';
 import { Card, ListLink } from '../components/ui';
 
@@ -9,6 +10,8 @@ export function Mehr() {
         <ul className="list">
           <ListLink to="/rezepte" left={<Icon name="rx" />} title="Rezepte" sub="Alle Verordnungen nach Status" />
           <ListLink to="/rezepte/neu" left={<Icon name="plus" />} title="Neues Rezept erfassen" />
+          <ListLink to="/suche" left={<Icon name="search" />} title="Suche" sub="Patienten, Rezepte, Rechnungen, Dokumente" />
+          <ListLink to="/statistik" left={<Icon name="chart" />} title="Statistik & Export" sub="Umsatz, Einheiten, Kostenträger, CSV" />
           <ListLink to="/stammdaten?tab=praxis" left={<Icon name="briefcase" />} title="Stammdaten" sub="Name, IK, Bankverbindung" />
           <ListLink to="/stammdaten?tab=preise" left={<Icon name="euro" />} title="Leistungen & Preise" />
           <ListLink to="/stammdaten?tab=kostentraeger" left={<Icon name="file" />} title="Kostenträger" />
@@ -17,6 +20,9 @@ export function Mehr() {
           <ListLink to="/info" left={<Icon name="alert" />} title="Datenschutz & rechtliche Hinweise" />
         </ul>
       </Card>
+      <button className="btn block" onClick={sperren}>
+        <Icon name="lock" size={18} /> App sperren
+      </button>
     </Page>
   );
 }
@@ -30,7 +36,12 @@ export function Info() {
           Pflicht zu einem C5-Testat für Cloud-Dienste nach § 393 SGB V. Gleichzeitig gilt: Geht das Gerät verloren oder werden Browserdaten gelöscht, sind die Daten
           weg – bitte regelmäßig unter <i>Einstellungen → Datensicherung</i> sichern.
         </p>
-        <p>Das Gerät sollte mit PIN/Biometrie und Geräteverschlüsselung geschützt sein.</p>
+        <p>
+          Patientendaten, Rezepte, Termine, Rechnungen und Dokumente werden mit XChaCha20-Poly1305 verschlüsselt gespeichert. Der Schlüssel wird aus der PIN abgeleitet
+          (PBKDF2-SHA-256, 310.000 Runden) und liegt nur im Arbeitsspeicher, solange die App entsperrt ist. Nach Inaktivität sperrt sich die App automatisch. Unverschlüsselt
+          bleiben nur technische Schlüssel (IDs, Terminzeitpunkte, Status) sowie Praxisdaten und Adressbuch.
+        </p>
+        <p>Sicherungs- und Abgleich-Dateien werden mit einem eigenen Passwort verschlüsselt. Das Gerät selbst sollte zusätzlich mit PIN/Biometrie geschützt sein.</p>
       </Card>
       <Card title="Gesundheitsdaten (Art. 9 DSGVO)">
         <ul>

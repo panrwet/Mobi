@@ -51,6 +51,7 @@ export function TerminForm() {
   const auswahl = infos.filter((i) => i.a.offen || i.rezept.id === data.rezeptId).sort((a, b) => patientName(a.patient).localeCompare(patientName(b.patient)));
   const kollision = konflikte(new Date(data.start), data.dauerMin, alleTermine ?? [], data.id);
   const vergangen = new Date(data.start).getTime() < Date.now();
+  const abgerechnet = !!vorhanden?.rechnungId;
 
   const doku = data.doku ?? { inhalte: '', verlauf: '', naechsteSchritte: '', erstelltAm: '' };
   const setDoku = (patch: Partial<typeof doku>) => set({ doku: { ...doku, ...patch, erstelltAm: doku.erstelltAm || new Date().toISOString() } });
@@ -72,8 +73,12 @@ export function TerminForm() {
 
   const loeschen = async () => {
     if (!data.id || !confirm('Termin löschen?')) return;
-    await deleteTermin(data.id);
-    nav(-1);
+    try {
+      await deleteTermin(data.id);
+      nav(-1);
+    } catch (err) {
+      alert((err as Error).message);
+    }
   };
 
   const vorlage = () => {
@@ -107,6 +112,11 @@ export function TerminForm() {
         </Card>
       )}
 
+      {abgerechnet && (
+        <Alert tone="info">
+          Dieser Termin ist bereits <Link to={`/rechnungen/${vorhanden!.rechnungId}`}>abgerechnet</Link>. Datum, Status, Einheiten und km sind gesperrt – die Dokumentation kann weiter ergänzt werden.
+        </Alert>
+      )}
       {id && data.status === 'geplant' && vergangen && <Alert>Dieser Termin liegt in der Vergangenheit – bitte Status setzen.</Alert>}
 
       {id && data.status === 'geplant' && (
@@ -166,6 +176,7 @@ export function TerminForm() {
       )}
 
       <Card title="Termindaten">
+        <fieldset disabled={abgerechnet} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <Field label="Rezept / Patient *">
           <select
             value={data.rezeptId}
@@ -218,6 +229,7 @@ export function TerminForm() {
             </select>
           </Field>
         )}
+        </fieldset>
         <Field label="Notiz">
           <input value={data.notiz ?? ''} onChange={(ev) => set({ notiz: ev.target.value })} />
         </Field>
@@ -232,7 +244,7 @@ export function TerminForm() {
       </Card>
 
       <div className="form-actions">
-        {id && (
+        {id && !abgerechnet && (
           <button className="btn danger" onClick={loeschen}>
             Löschen
           </button>

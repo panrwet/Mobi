@@ -2,7 +2,7 @@
 // Datumsangaben werden relativ zum heutigen Tag erzeugt, damit die Daten immer "frisch" wirken.
 import { db } from './db';
 import { defaultEinstellungen } from './defaults';
-import type { Arzt, Einstellungen, Kostentraeger, Patient, Position, Rechnung, Rezept, Termin } from './types';
+import type { Arzt, Bericht, Dokument, Einstellungen, Kostentraeger, Patient, Position, Rechnung, Rezept, Termin } from './types';
 import { berechneZuzahlung, formatNummer, rechnungsPositionen, summePositionen } from '../lib/abrechnung';
 import { addDays, isoDate, round2 } from '../lib/format';
 
@@ -124,7 +124,7 @@ function kvPositionen(e: Einstellungen, einheiten: number, km: number, leistung 
   const l = (id: string) => e.leistungen.find((x) => x.id === id)!;
   const pos = (id: string, menge: number): Position => {
     const x = l(id);
-    return { leistungId: x.id, typ: x.typ, bezeichnung: x.bezeichnung, positionsnummer: x.positionsnummer, menge, einheit: x.einheit, einzelpreis: x.preis };
+    return { leistungId: x.id, typ: x.typ, zeitpunkt: x.zeitpunkt, bezeichnung: x.bezeichnung, positionsnummer: x.positionsnummer, menge, einheit: x.einheit, einzelpreis: x.preis };
   };
   return [pos('l-erst', 1), pos(leistung, einheiten), pos('l-bericht', 1), ...(km > 0 ? [pos('l-km', km)] : [])];
 }
@@ -247,19 +247,24 @@ export async function ladeBeispieldaten() {
   // Rechnungen
   let reNr = 1;
   const rechnungen: Rechnung[] = [];
-  const rechnung = (r: Rezept, datumOffset: number, status: Rechnung['status'], bezahltOffset?: number, mahnstufe = 0) => {
+  const rechnung = (r: Rezept, datumOffset: number, status: Rechnung['status'], bezahltOffset?: number, mahnstufe = 0, art: Rechnung['art'] = 'schluss', bisTermin?: number) => {
     const p = patienten.find((x) => x.id === r.patientId)!;
     const kt = kostentraeger.find((x) => x.id === r.kostentraegerId);
-    const ts = ctx.termine.filter((t) => t.rezeptId === r.id);
-    const positionen = rechnungsPositionen(r.kv!.positionen, ts);
+    const alle = ctx.termine.filter((t) => t.rezeptId === r.id && t.status === 'durchgefuehrt' && !t.rechnungId);
+    const ts = bisTermin !== undefined ? alle.slice(0, bisTermin) : alle;
+    const frueher = rechnungen.filter((x) => x.rezeptId === r.id).flatMap((x) => x.positionen);
+    const positionen = rechnungsPositionen(r.kv!.positionen, ts, frueher, art);
+    const id = `re-${r.id}-${reNr}`;
+    for (const t of ts) t.rechnungId = id;
     const summe = summePositionen(positionen);
     const datum = d(datumOffset);
     const zuzahlung = berechneZuzahlung(summe, p, e.zuzahlungAktiv, datum);
     const daten = ts.filter((t) => t.status === 'durchgefuehrt').map((t) => t.start.slice(0, 10)).sort();
     const nummer = formatNummer(e.rechnungPraefix, jahr, reNr++);
     rechnungen.push({
-      id: `re-${r.id}`,
+      id,
       nummer,
+      art,
       rezeptId: r.id,
       patientId: p.id,
       kostentraegerId: r.kostentraegerId,
@@ -277,12 +282,59 @@ export async function ladeBeispieldaten() {
       patientInfo: { name: `${p.vorname} ${p.nachname}`, geburtsdatum: p.geburtsdatum, versichertennummer: p.versicherung.versichertennummer },
       genehmigungsnummer: r.kv!.genehmigungsnummer,
     });
-    r.verlauf.push({ datum: ts.length ? new Date(d(datumOffset) + 'T10:00:00').toISOString() : new Date().toISOString(), text: `Rechnung ${nummer} erstellt` });
-    if (status === 'bezahlt') r.verlauf.push({ datum: new Date(d(bezahltOffset!) + 'T10:00:00').toISOString(), text: `Zahlungseingang zu Rechnung ${nummer} – Rezept abgeschlossen` });
+    r.verlauf.push({ datum: new Date(d(datumOffset) + 'T10:00:00').toISOString(), text: `${art === 'teil' ? 'Teilrechnung' : 'Schlussrechnung'} ${nummer} erstellt` });
+    if (status === 'bezahlt') r.verlauf.push({ datum: new Date(d(bezahltOffset!) + 'T10:00:00').toISOString(), text: `Zahlungseingang zu Rechnung ${nummer}` });
   };
   rechnung(r11, -220, 'bezahlt', -200);
   rechnung(r7, -90, 'bezahlt', -70);
   rechnung(r6, -45, 'offen', undefined, 1);
+  // Teilrechnung während laufender Behandlung (Holm, erste 5 Termine)
+  rechnung(r1, -8, 'offen', undefined, 0, 'teil', 5);
+  rechnungen.find((x) => x.rezeptId === 'r-6')!.mahnungen = [d(-12)];
+
+  // Berichte
+  const bericht = (typ: Bericht['typ'], datumOffset: number, extra: Partial<Bericht>): Bericht => ({
+    id: `b-${typ}-${datumOffset}`,
+    typ,
+    datum: d(datumOffset),
+    empfaenger: 'beide',
+    ausgangslage: '',
+    ziele: '',
+    verlauf: '',
+    ergebnis: '',
+    empfehlung: '',
+    versendetAm: d(datumOffset),
+    ...extra,
+  });
+  r1.berichte = [
+    bericht('eingang', -29, {
+      empfaenger: 'arzt',
+      ausgangslage: 'Frau Holm (78 J.) leidet an einer feuchten AMD beidseits (Visus RA 0,04 / LA 0,02). Sie lebt allein, bewegt sich derzeit nur noch in Begleitung außer Haus. Stürze an Bordsteinen in den letzten Monaten.',
+      ziele: 'Sichere Fortbewegung mit dem Langstock im Wohnumfeld, selbstständiger Weg zu Bäcker, Hausarzt und Bushaltestelle, sichere Straßenquerung an der Ampel.',
+      ergebnis: 'Langstock angepasst, Grundtechniken eingeführt. Hohe Motivation, gute Restsehnutzung bei Tageslicht.',
+      empfehlung: 'Training wie beantragt (20 UE) im häuslichen Umfeld.',
+    }),
+  ];
+  r7.berichte = [
+    bericht('abschluss', -95, {
+      empfaenger: 'kostentraeger',
+      ausgangslage: 'Herr Möller ist nach einem Arbeitsunfall erblindet (Sehnervatrophie). Vor dem Training keine selbstständige Mobilität.',
+      ziele: 'Selbstständiger Arbeitsweg mit ÖPNV, sichere Orientierung im Betrieb.',
+      verlauf: 'In 8 Einheiten wurden Langstocktechniken, Straßenquerung, Bus- und Bahnfahren sowie der Arbeitsweg erarbeitet.',
+      ergebnis: 'Alle Ziele erreicht. Herr Möller bewältigt den Arbeitsweg (Bus + 600 m Fußweg) selbstständig und sicher.',
+      empfehlung: 'Keine weitere Maßnahme erforderlich. Auffrischung bei Wohnort- oder Arbeitsplatzwechsel empfohlen.',
+    }),
+  ];
+
+  // Folgeverordnung zu Lea Schulz (Teilgenehmigung 6 von 8 UE)
+  const r12 = rez({ id: 'r-12', patientId: 'p-8', ausstellungsdatum: d(-2), diagnose: 'Morbus Stargardt', icd10: 'H35.5', verordneteEinheiten: 10, vorgaengerId: 'r-8', verordnung: 'Folgeverordnung: Training in Orientierung und Mobilität mit dem Blindenlangstock (10 UE à 60 Min.)' });
+  r12.verlauf.push({ datum: ts(-2), text: `Folgeverordnung zu ${r8.nummer}` });
+
+  // Beispiel-Dokument (Scan einer Verordnung, hier als Platzhaltergrafik)
+  const dokumente: Dokument[] = [
+    { id: 'd-1', patientId: 'p-2', rezeptId: 'r-2', titel: 'Verordnung Augenarzt (Scan)', kategorie: 'Verordnung', datum: d(-1), mime: 'image/svg+xml', groesse: MUSTER_SCAN.length, daten: MUSTER_SCAN, erstelltAm: ts(-1) },
+    { id: 'd-2', patientId: 'p-1', rezeptId: 'r-1', titel: 'Genehmigung Musterkasse Nord', kategorie: 'Genehmigung', datum: d(-35), mime: 'image/svg+xml', groesse: MUSTER_GENEHMIGUNG.length, daten: MUSTER_GENEHMIGUNG, erstelltAm: ts(-35) },
+  ];
 
   // Verlaufseinträge für KV-Schritte ergänzen
   for (const r of rezepte) {
@@ -301,8 +353,9 @@ export async function ladeBeispieldaten() {
   e.naechsteKvNummer = kvNr;
   e.naechsteRechnungsnummer = reNr;
 
-  await db.transaction('rw', [db.patienten, db.rezepte, db.termine, db.rechnungen, db.kostentraeger, db.aerzte, db.einstellungen], async () => {
-    await Promise.all([db.patienten.clear(), db.rezepte.clear(), db.termine.clear(), db.rechnungen.clear(), db.kostentraeger.clear(), db.aerzte.clear(), db.einstellungen.clear()]);
+  await db.transaction('rw', [db.patienten, db.rezepte, db.termine, db.rechnungen, db.kostentraeger, db.aerzte, db.einstellungen, db.dokumente, db.geloescht], async () => {
+    await Promise.all([db.patienten.clear(), db.rezepte.clear(), db.termine.clear(), db.rechnungen.clear(), db.kostentraeger.clear(), db.aerzte.clear(), db.einstellungen.clear(), db.dokumente.clear(), db.geloescht.clear()]);
+    await db.dokumente.bulkAdd(dokumente);
     await db.kostentraeger.bulkAdd(kostentraeger);
     await db.aerzte.bulkAdd(aerzte);
     await db.patienten.bulkAdd(patienten);
@@ -319,3 +372,34 @@ export function initDatenbank(): Promise<void> {
   initPromise ??= db.einstellungen.get('main').then((vorhanden) => (vorhanden ? undefined : ladeBeispieldaten()));
   return initPromise;
 }
+
+const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const svgScan = (titel: string, zeilen: string[]) =>
+  'data:image/svg+xml;base64,' +
+  btoa(
+    unescape(
+      encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="595" height="842" viewBox="0 0 595 842"><rect width="595" height="842" fill="#fbfaf6"/><rect x="30" y="30" width="535" height="782" fill="none" stroke="#c9c4b5" stroke-width="2"/><text x="50" y="80" font-family="Arial" font-size="22" font-weight="bold" fill="#333">${xml(titel)}</text>${zeilen
+          .map((z, i) => `<text x="50" y="${130 + i * 34}" font-family="Arial" font-size="15" fill="#444">${xml(z)}</text>`)
+          .join('')}<text x="50" y="790" font-family="Arial" font-size="12" fill="#a33">MUSTER – fiktive Beispieldaten</text></svg>`,
+      ),
+    ),
+  );
+
+const MUSTER_SCAN = svgScan('Ärztliche Verordnung', [
+  'Patient: Jonas Petersen, geb. 22.07.2002',
+  'Kasse: BKK Beispiel · Vers.-Nr. B234567891',
+  'Diagnose: Retinitis pigmentosa (H35.5)',
+  'Verordnung: Blindenlangstock + Training O&M',
+  'Umfang: 30 UE à 60 Min.',
+  'Dr. med. Julia Augenstein, Augenheilkunde, Kiel',
+]);
+
+const MUSTER_GENEHMIGUNG = svgScan('Kostenzusage', [
+  'Musterkasse Nord – Abteilung Hilfsmittel',
+  'Versicherte: Margarete Holm',
+  'Genehmigungsnummer: MKN-2026-44121',
+  'Genehmigt: 20 UE Training O&M',
+  'Fahrtkosten: nach Aufwand',
+]);

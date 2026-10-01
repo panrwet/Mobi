@@ -73,7 +73,7 @@ export function RechnungenListe() {
               key={r.id}
               to={`/rechnungen/${r.id}`}
               title={`${r.nummer} · ${r.patientInfo.name}`}
-              sub={`${formatDate(r.datum)} · ${r.empfaenger.name}`}
+              sub={`${r.art === 'teil' ? 'Teilrechnung · ' : ''}${formatDate(r.datum)} · ${r.empfaenger.name}`}
               right={
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontWeight: 700 }}>{formatEuro(r.zahlbetrag)}</div>
@@ -84,6 +84,11 @@ export function RechnungenListe() {
           ))}
         </ul>
       </Card>
+      <div className="form-actions" style={{ marginBottom: 10 }}>
+        <Link className="btn small" to="/statistik">
+          <Icon name="chart" size={16} /> Statistik & CSV-Export
+        </Link>
+      </div>
       <p className="small muted" style={{ padding: '0 4px' }}>
         Neue Rechnungen werden direkt am Rezept erstellt (Status „Abrechenbar“). Rechnungen sind nach der Erstellung unveränderlich und können nur storniert werden.
       </p>
@@ -110,7 +115,7 @@ export function RechnungDetail() {
     const grund = prompt('Rechnung stornieren – Grund:');
     if (grund === null) return;
     await rechnungStornieren(re.id, grund);
-    toast('Rechnung storniert – Rezept ist wieder abrechenbar');
+    toast('Rechnung storniert – die Termine sind wieder abrechenbar');
   };
 
   return (
@@ -135,6 +140,14 @@ export function RechnungDetail() {
           </dd>
           <dt>Fällig am</dt>
           <dd>{formatDate(re.faelligAm)}</dd>
+          <dt>Art</dt>
+          <dd>{re.art === 'teil' ? 'Teilrechnung' : 'Schlussrechnung'}</dd>
+          {(re.mahnungen?.length ?? 0) > 0 && (
+            <>
+              <dt>Erinnerungen</dt>
+              <dd>{re.mahnungen!.map(formatDate).join(', ')}</dd>
+            </>
+          )}
           {re.bezahltAm && (
             <>
               <dt>Bezahlt am</dt>
@@ -176,10 +189,12 @@ export function RechnungDetail() {
             className="btn"
             onClick={async () => {
               await rechnungMahnen(re.id);
-              toast('Zahlungserinnerung vermerkt');
+              const neu = await db.rechnungen.get(re.id);
+              if (neu) await zeigePdf((m) => m.mahnungPdf(neu, e), `Zahlungserinnerung-${re.nummer}.pdf`);
+              toast('Zahlungserinnerung erstellt');
             }}
           >
-            Erinnerung vermerken
+            <Icon name="pdf" size={18} /> Zahlungserinnerung
           </button>
         )}
         {re.status === 'offen' && (
