@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { db, loeschen as loescheDatensatz, newId } from '../db/db';
+import { db, newId } from '../db/db';
 import { Dokumente } from '../components/Dokumente';
 import type { Patient, Sehstatus } from '../db/types';
 import { Page } from '../components/Layout';
@@ -254,7 +254,7 @@ export function PatientForm() {
       return;
     }
     if (!confirm('Patient endgültig löschen?')) return;
-    await loescheDatensatz('patienten', data.id);
+    await db.patienten.delete(data.id);
     nav('/patienten', { replace: true });
   };
 

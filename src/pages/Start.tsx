@@ -1,7 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
 import { db } from '../db/db';
-import { sperren } from '../db/schutz';
 import { Page } from '../components/Layout';
 import { Icon } from '../components/Icon';
 import { Badge, Card, Empty, ListLink } from '../components/ui';
@@ -50,14 +49,7 @@ export function Start() {
   const tageszeit = new Date().getHours() < 11 ? 'Guten Morgen' : new Date().getHours() < 18 ? 'Guten Tag' : 'Guten Abend';
 
   return (
-    <Page
-      title="Mobi"
-      actions={
-        <button className="icon-btn" aria-label="Sperren" title="Sperren" onClick={sperren}>
-          <Icon name="lock" />
-        </button>
-      }
-    >
+    <Page title="Mobi">
       <div style={{ margin: '2px 2px 14px' }}>
         <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>
           {tageszeit}, {e.name.split(' ')[0]}

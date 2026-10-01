@@ -4,10 +4,6 @@ import { db } from '../db/db';
 import { createRechnung, getEinstellungen, rechnungBezahlt } from '../db/actions';
 import { ladeBeispieldaten } from '../db/seed';
 import { werteRezeptAus } from '../lib/status';
-import { setzeSitzungsschluessel, zufall } from '../db/krypto';
-
-// Tests laufen mit einem zufälligen Datenschlüssel (wie nach dem Entsperren)
-setzeSitzungsschluessel(zufall(32));
 
 async function phasen() {
   const e = await getEinstellungen();
@@ -93,5 +89,25 @@ describe('Teil- und Schlussrechnung', () => {
     await rechnungStornieren(id, 'Test');
     expect((await db.termine.where('rezeptId').equals('r-4').toArray()).some((t) => t.rechnungId)).toBe(false);
     expect((await phasen())['r-4'].phase).toBe('abrechenbar');
+  });
+});
+
+describe('Datensicherung', () => {
+  it('mit und ohne Passwort sichern und wiederherstellen', async () => {
+    const { exportiereSicherung, sicherungEinspielen, brauchtPasswort } = await import('../db/sicherung');
+    await ladeBeispieldaten();
+    const offen = await exportiereSicherung('');
+    expect(brauchtPasswort(offen)).toBe(false);
+    const geheim = await exportiereSicherung('passwort1');
+    expect(brauchtPasswort(geheim)).toBe(true);
+    expect(geheim).not.toContain('Holm');
+
+    await db.patienten.clear();
+    await expect(sicherungEinspielen(geheim, 'falsch123')).rejects.toThrow(/Passwort/);
+    await sicherungEinspielen(geheim, 'passwort1');
+    expect(await db.patienten.count()).toBe(10);
+    await db.dokumente.clear();
+    await sicherungEinspielen(offen);
+    expect(await db.dokumente.count()).toBe(2);
   });
 });

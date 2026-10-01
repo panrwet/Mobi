@@ -353,8 +353,8 @@ export async function ladeBeispieldaten() {
   e.naechsteKvNummer = kvNr;
   e.naechsteRechnungsnummer = reNr;
 
-  await db.transaction('rw', [db.patienten, db.rezepte, db.termine, db.rechnungen, db.kostentraeger, db.aerzte, db.einstellungen, db.dokumente, db.geloescht], async () => {
-    await Promise.all([db.patienten.clear(), db.rezepte.clear(), db.termine.clear(), db.rechnungen.clear(), db.kostentraeger.clear(), db.aerzte.clear(), db.einstellungen.clear(), db.dokumente.clear(), db.geloescht.clear()]);
+  await db.transaction('rw', [db.patienten, db.rezepte, db.termine, db.rechnungen, db.kostentraeger, db.aerzte, db.einstellungen, db.dokumente], async () => {
+    await Promise.all([db.patienten.clear(), db.rezepte.clear(), db.termine.clear(), db.rechnungen.clear(), db.kostentraeger.clear(), db.aerzte.clear(), db.einstellungen.clear(), db.dokumente.clear()]);
     await db.dokumente.bulkAdd(dokumente);
     await db.kostentraeger.bulkAdd(kostentraeger);
     await db.aerzte.bulkAdd(aerzte);

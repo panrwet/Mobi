@@ -1,5 +1,4 @@
 import { Page } from '../components/Layout';
-import { sperren } from '../db/schutz';
 import { Icon } from '../components/Icon';
 import { Card, ListLink } from '../components/ui';
 
@@ -20,9 +19,6 @@ export function Mehr() {
           <ListLink to="/info" left={<Icon name="alert" />} title="Datenschutz & rechtliche Hinweise" />
         </ul>
       </Card>
-      <button className="btn block" onClick={sperren}>
-        <Icon name="lock" size={18} /> App sperren
-      </button>
     </Page>
   );
 }
@@ -36,12 +32,7 @@ export function Info() {
           Pflicht zu einem C5-Testat für Cloud-Dienste nach § 393 SGB V. Gleichzeitig gilt: Geht das Gerät verloren oder werden Browserdaten gelöscht, sind die Daten
           weg – bitte regelmäßig unter <i>Einstellungen → Datensicherung</i> sichern.
         </p>
-        <p>
-          Patientendaten, Rezepte, Termine, Rechnungen und Dokumente werden mit XChaCha20-Poly1305 verschlüsselt gespeichert. Der Schlüssel wird aus der PIN abgeleitet
-          (PBKDF2-SHA-256, 310.000 Runden) und liegt nur im Arbeitsspeicher, solange die App entsperrt ist. Nach Inaktivität sperrt sich die App automatisch. Unverschlüsselt
-          bleiben nur technische Schlüssel (IDs, Terminzeitpunkte, Status) sowie Praxisdaten und Adressbuch.
-        </p>
-        <p>Sicherungs- und Abgleich-Dateien werden mit einem eigenen Passwort verschlüsselt. Das Gerät selbst sollte zusätzlich mit PIN/Biometrie geschützt sein.</p>
+        <p>Das Gerät sollte mit Bildschirmsperre (PIN/Biometrie) und Geräteverschlüsselung geschützt sein. Sicherungsdateien können mit einem Passwort verschlüsselt werden.</p>
       </Card>
       <Card title="Gesundheitsdaten (Art. 9 DSGVO)">
         <ul>

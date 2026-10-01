@@ -7,7 +7,7 @@ import { Icon } from '../components/Icon';
 import { Badge, Card, Empty, Initialen, ListLink } from '../components/ui';
 import { formatDate, formatEuro, patientName } from '../lib/format';
 
-/** Suche über Patienten, Rezepte, Rechnungen und Adressbuch (alles lokal, auch in verschlüsselten Daten) */
+/** Suche über Patienten, Rezepte, Rechnungen und Adressbuch (alles lokal) */
 export function Suche() {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');

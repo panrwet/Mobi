@@ -3,10 +3,7 @@ import { HashRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { BottomNav } from './components/Layout';
 import { ToastProvider } from './components/ui';
 import { getEinstellungen } from './db/actions';
-import { schutzEingerichtet } from './db/schutz';
 import { initDatenbank } from './db/seed';
-import { Entsperren, SchutzEinrichten, useAutoSperre } from './components/Sperre';
-import { useEinstellungen } from './lib/hooks';
 import { ladePdfModul } from './lib/pdfLazy';
 import { applyTheme, Einstellungen } from './pages/Einstellungen';
 import { Kalender } from './pages/Kalender';
@@ -29,40 +26,25 @@ function ScrollTop() {
   return null;
 }
 
-type Zustand = 'laden' | 'einrichten' | 'gesperrt' | 'bereit';
-
 export function App() {
-  const [zustand, setZustand] = useState<Zustand>('laden');
+  const [bereit, setBereit] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
 
   useEffect(() => {
-    getEinstellungen()
-      .then((e) => applyTheme(e.theme))
-      .then(schutzEingerichtet)
-      .then((ja) => setZustand(ja ? 'gesperrt' : 'einrichten'))
-      .catch((e: Error) => setFehler(e.message));
-  }, []);
-
-  const entsperrt = () => {
     initDatenbank()
+      .then(getEinstellungen)
+      .then((e) => applyTheme(e.theme))
       .then(() => {
-        setZustand('bereit');
+        setBereit(true);
         // PDF-Modul im Hintergrund vorladen, damit PDFs ohne Verzögerung öffnen
         window.setTimeout(ladePdfModul, 1500);
       })
       .catch((e: Error) => setFehler(e.message));
-  };
+  }, []);
 
   if (fehler) return <div className="content">Datenbank konnte nicht geöffnet werden: {fehler}</div>;
-  if (zustand === 'laden') return <div className="content muted">Lade …</div>;
-  if (zustand === 'einrichten') return <SchutzEinrichten onFertig={entsperrt} />;
-  if (zustand === 'gesperrt') return <Entsperren onFertig={entsperrt} />;
-  return <Hauptansicht />;
-}
+  if (!bereit) return <div className="content muted">Lade …</div>;
 
-function Hauptansicht() {
-  const e = useEinstellungen();
-  useAutoSperre(e.autoSperreMin);
   return (
     <HashRouter>
       <ToastProvider>

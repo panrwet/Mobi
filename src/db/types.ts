@@ -2,10 +2,6 @@
 
 export type ID = string;
 
-/** Wird von der Datenbank bei jeder Änderung automatisch gesetzt (für den Geräte-Abgleich) */
-export interface Stempel {
-  geaendertAm?: string;
-}
 
 export type KostentraegerTyp = 'GKV' | 'PKV' | 'Beihilfe' | 'Sozialhilfe' | 'Eingliederungshilfe' | 'BG' | 'DRV' | 'Agentur' | 'Selbstzahler' | 'Sonstige';
 
@@ -15,7 +11,7 @@ export interface Adresse {
   ort: string;
 }
 
-export interface Kostentraeger extends Stempel {
+export interface Kostentraeger {
   id: ID;
   name: string;
   typ: KostentraegerTyp;
@@ -27,7 +23,7 @@ export interface Kostentraeger extends Stempel {
   notiz?: string;
 }
 
-export interface Arzt extends Stempel {
+export interface Arzt {
   id: ID;
   titel?: string;
   name: string;
@@ -41,7 +37,7 @@ export interface Arzt extends Stempel {
 
 export type Sehstatus = 'blind' | 'hochgradig sehbehindert' | 'sehbehindert' | 'sonstige';
 
-export interface Patient extends Stempel {
+export interface Patient {
   id: ID;
   anrede: 'Frau' | 'Herr' | 'Divers' | '';
   vorname: string;
@@ -129,7 +125,7 @@ export interface Bericht {
   versendetAm?: string;
 }
 
-export interface Rezept extends Stempel {
+export interface Rezept {
   id: ID;
   nummer: string;
   patientId: ID;
@@ -161,7 +157,7 @@ export interface Dokumentation {
   erstelltAm: string;
 }
 
-export interface Termin extends Stempel {
+export interface Termin {
   id: ID;
   rezeptId: ID;
   patientId: ID;
@@ -180,7 +176,7 @@ export interface Termin extends Stempel {
 
 export type RechnungStatus = 'offen' | 'bezahlt' | 'storniert';
 
-export interface Rechnung extends Stempel {
+export interface Rechnung {
   id: ID;
   nummer: string;
   /** Teilrechnung (Abschlag während der Behandlung) oder Schlussrechnung */
@@ -220,7 +216,7 @@ export interface Leistung {
 
 export type DokumentKategorie = 'Verordnung' | 'Genehmigung' | 'Bescheid' | 'Befund' | 'Schriftverkehr' | 'Einwilligung' | 'Sonstiges';
 
-export interface Dokument extends Stempel {
+export interface Dokument {
   id: ID;
   patientId: ID;
   rezeptId?: ID;
@@ -229,24 +225,11 @@ export interface Dokument extends Stempel {
   datum: string;
   mime: string;
   groesse: number;
-  daten: string; // DataURL (wird verschlüsselt gespeichert)
+  daten: string; // DataURL
   erstelltAm: string;
 }
 
-/** Unverschlüsselte Verwaltungsdaten (Schlüsselablage, Geräte-ID) */
-export type Meta =
-  | { id: 'krypto'; salt: string; iterationen: number; dekVerpackt: string; erstelltAm: string }
-  | { id: 'geraet'; geraeteId: string; letzterAbgleich?: string };
-
-/** Löschvermerk, damit Löschungen beim Geräte-Abgleich übertragen werden */
-export interface Geloescht {
-  id: string; // `${tabelle}:${schluessel}`
-  tabelle: string;
-  schluessel: string;
-  am: string;
-}
-
-export interface Einstellungen extends Stempel {
+export interface Einstellungen {
   id: 'main';
   // Praxis / Reha-Fachkraft
   name: string;
@@ -278,7 +261,6 @@ export interface Einstellungen extends Stempel {
   rezeptPraefix: string;
   naechsteRezeptNummer: number;
   zuzahlungAktiv: boolean;
-  autoSperreMin: number;
   // Darstellung
   theme: 'auto' | 'hell' | 'dunkel';
 }

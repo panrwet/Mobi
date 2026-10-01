@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { db, loeschen, newId } from '../db/db';
+import { db, newId } from '../db/db';
 import { saveEinstellungen } from '../db/actions';
 import type { Adresse, Arzt, Einstellungen, Kostentraeger, KostentraegerTyp, Leistung, Leistungsart, PositionTyp } from '../db/types';
 import { Page } from '../components/Layout';
@@ -290,7 +290,7 @@ function KostentraegerListe() {
               const n = await db.patienten.filter((p) => p.versicherung.kostentraegerId === edit.id).count();
               if (n > 0) return alert(`Wird noch von ${n} Patient(en) verwendet.`);
               if (confirm('Kostenträger löschen?')) {
-                await loeschen('kostentraeger', edit.id);
+                await db.kostentraeger.delete(edit.id);
                 setEdit(null);
               }
             }}
@@ -372,7 +372,7 @@ function AerzteListe() {
               const n = await db.rezepte.filter((r) => r.arztId === edit.id).count();
               if (n > 0) return alert(`Wird noch in ${n} Rezept(en) verwendet.`);
               if (confirm('Arzt löschen?')) {
-                await loeschen('aerzte', edit.id);
+                await db.aerzte.delete(edit.id);
                 setEdit(null);
               }
             }}

@@ -77,6 +77,5 @@ export const defaultEinstellungen: Einstellungen = {
   rezeptPraefix: 'VO-',
   naechsteRezeptNummer: 1,
   zuzahlungAktiv: false,
-  autoSperreMin: 5,
   theme: 'auto',
 };

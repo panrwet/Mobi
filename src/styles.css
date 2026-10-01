@@ -950,42 +950,6 @@ table.tbl {
   }
 }
 
-/* Sperrbildschirm */
-.sperre {
-  min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px 16px;
-  background: linear-gradient(160deg, var(--primary) 0%, var(--bg) 70%);
-}
-.sperre-box {
-  width: 100%;
-  max-width: 380px;
-  background: var(--surface);
-  border-radius: 22px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
-  padding: 28px 22px;
-  text-align: center;
-}
-.sperre-box h1 {
-  font-size: 1.3rem;
-  margin: 10px 0 8px;
-}
-.sperre-logo img {
-  border-radius: 16px;
-}
-.pin-input {
-  text-align: center;
-  font-size: 1.4rem !important;
-  letter-spacing: 0.3em;
-  margin-bottom: 12px;
-}
-.pin-input::placeholder {
-  letter-spacing: normal;
-  font-size: 1rem;
-}
-
 /* Säulendiagramm (Statistik) */
 :root {
   --chart-1: #2a78d6;

@@ -1,6 +1,6 @@
 // Schreibende Operationen auf der Datenbank. Alle fachlichen Abläufe (Nummernvergabe,
 // Statuswechsel, Rechnungserstellung) laufen hier zentral, damit die Seiten schlank bleiben.
-import { db, loeschen, newId } from './db';
+import { db, newId } from './db';
 import { defaultEinstellungen } from './defaults';
 import type { Bericht, Einstellungen, Kostenvoranschlag, Rechnung, Rezept, Termin } from './types';
 import { berechneZuzahlung, formatNummer, rechnungsPositionen, summePositionen } from '../lib/abrechnung';
@@ -116,7 +116,7 @@ export async function saveTermin(t: Omit<Termin, 'id'> & { id?: string }): Promi
 export async function deleteTermin(id: string) {
   const t = await db.termine.get(id);
   if (t?.rechnungId) throw new Error('Der Termin ist bereits abgerechnet und kann nicht gelöscht werden.');
-  await loeschen('termine', id);
+  await db.termine.delete(id);
 }
 
 /**
@@ -249,9 +249,9 @@ export const BERICHT_TITEL: Record<Bericht['typ'], string> = {
 
 // ---------- Datensicherung ----------
 
-export const TABELLEN = ['patienten', 'rezepte', 'termine', 'rechnungen', 'kostentraeger', 'aerzte', 'einstellungen', 'dokumente', 'geloescht'] as const;
 
 export async function allesLoeschen() {
+  const { TABELLEN } = await import('./sicherung');
   await db.transaction('rw', TABELLEN.map((t) => db.table(t)), async () => {
     for (const t of TABELLEN) await db.table(t).clear();
   });

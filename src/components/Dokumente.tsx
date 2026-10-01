@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
-import { db, loeschen, newId } from '../db/db';
+import { db, newId } from '../db/db';
 import type { DokumentKategorie } from '../db/types';
 import { formatDate, isoDate } from '../lib/format';
 import { Icon } from './Icon';
@@ -128,7 +128,7 @@ export function Dokumente({ patientId, rezeptId, titel = 'Dokumente' }: { patien
                 className="icon-btn"
                 aria-label="Dokument löschen"
                 onClick={async () => {
-                  if (confirm(`„${d.titel}“ löschen?`)) await loeschen('dokumente', d.id);
+                  if (confirm(`„${d.titel}“ löschen?`)) await db.dokumente.delete(d.id);
                 }}
               >
                 <Icon name="trash" size={18} />
@@ -167,7 +167,7 @@ export function Dokumente({ patientId, rezeptId, titel = 'Dokumente' }: { patien
                 </select>
               </Field>
             )}
-            <p className="hint">Wird verschlüsselt auf diesem Gerät gespeichert. Fotos werden automatisch verkleinert.</p>
+            <p className="hint">Wird nur auf diesem Gerät gespeichert. Fotos werden automatisch verkleinert.</p>
             <button className="btn primary block" disabled={laeuft} onClick={speichern}>
               {laeuft ? 'Speichere …' : 'Speichern'}
             </button>
